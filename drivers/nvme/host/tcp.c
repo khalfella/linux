@@ -2270,17 +2270,12 @@ out_free_queue:
 	return error;
 }
 
-static void nvme_tcp_teardown_admin_queue(struct nvme_ctrl *ctrl,
-		bool remove)
+static void nvme_tcp_teardown_admin_queue(struct nvme_ctrl *ctrl)
 {
 	nvme_quiesce_admin_queue(ctrl);
 	blk_sync_queue(ctrl->admin_q);
 	nvme_tcp_stop_queue(ctrl, 0);
 	nvme_cancel_admin_tagset(ctrl);
-	if (remove) {
-		nvme_unquiesce_admin_queue(ctrl);
-		nvme_remove_admin_tag_set(ctrl);
-	}
 	nvme_tcp_free_admin_queue(ctrl);
 	if (ctrl->tls_pskid) {
 		dev_dbg(ctrl->device, "Wipe negotiated TLS_PSK %08x\n",
@@ -2423,7 +2418,11 @@ destroy_io:
 	}
 destroy_admin:
 	nvme_stop_keep_alive(ctrl);
-	nvme_tcp_teardown_admin_queue(ctrl, new);
+	nvme_tcp_teardown_admin_queue(ctrl);
+	if (new) {
+		nvme_unquiesce_admin_queue(ctrl);
+		nvme_remove_admin_tag_set(ctrl);
+	}
 	return ret;
 }
 
@@ -2466,7 +2465,7 @@ static void nvme_tcp_error_recovery_work(struct work_struct *work)
 	nvme_tcp_teardown_io_queues(ctrl);
 	/* unquiesce to fail fast pending requests */
 	nvme_unquiesce_io_queues(ctrl);
-	nvme_tcp_teardown_admin_queue(ctrl, false);
+	nvme_tcp_teardown_admin_queue(ctrl);
 	nvme_unquiesce_admin_queue(ctrl);
 	nvme_auth_stop(ctrl);
 
@@ -2487,7 +2486,7 @@ static void nvme_tcp_teardown_ctrl(struct nvme_ctrl *ctrl, bool shutdown)
 	nvme_tcp_teardown_io_queues(ctrl);
 	nvme_quiesce_admin_queue(ctrl);
 	nvme_disable_ctrl(ctrl, shutdown);
-	nvme_tcp_teardown_admin_queue(ctrl, shutdown);
+	nvme_tcp_teardown_admin_queue(ctrl);
 }
 
 static void nvme_tcp_delete_ctrl(struct nvme_ctrl *ctrl)
@@ -2497,6 +2496,8 @@ static void nvme_tcp_delete_ctrl(struct nvme_ctrl *ctrl)
 		nvme_unquiesce_io_queues(ctrl);
 		nvme_remove_io_tag_set(ctrl);
 	}
+	nvme_unquiesce_admin_queue(ctrl);
+	nvme_remove_admin_tag_set(ctrl);
 }
 
 static void nvme_reset_ctrl_work(struct work_struct *work)
