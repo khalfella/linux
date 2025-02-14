@@ -2289,8 +2289,7 @@ static void nvme_tcp_teardown_admin_queue(struct nvme_ctrl *ctrl,
 	}
 }
 
-static void nvme_tcp_teardown_io_queues(struct nvme_ctrl *ctrl,
-		bool remove)
+static void nvme_tcp_teardown_io_queues(struct nvme_ctrl *ctrl)
 {
 	if (ctrl->queue_count <= 1)
 		return;
@@ -2298,10 +2297,6 @@ static void nvme_tcp_teardown_io_queues(struct nvme_ctrl *ctrl,
 	nvme_sync_io_queues(ctrl);
 	nvme_tcp_stop_io_queues(ctrl);
 	nvme_cancel_tagset(ctrl);
-	if (remove) {
-		nvme_unquiesce_io_queues(ctrl);
-		nvme_remove_io_tag_set(ctrl);
-	}
 	nvme_tcp_free_io_queues(ctrl);
 }
 
@@ -2468,7 +2463,7 @@ static void nvme_tcp_error_recovery_work(struct work_struct *work)
 		nvme_auth_revoke_tls_key(ctrl);
 	nvme_stop_keep_alive(ctrl);
 	flush_work(&ctrl->async_event_work);
-	nvme_tcp_teardown_io_queues(ctrl, false);
+	nvme_tcp_teardown_io_queues(ctrl);
 	/* unquiesce to fail fast pending requests */
 	nvme_unquiesce_io_queues(ctrl);
 	nvme_tcp_teardown_admin_queue(ctrl, false);
@@ -2489,7 +2484,7 @@ static void nvme_tcp_error_recovery_work(struct work_struct *work)
 
 static void nvme_tcp_teardown_ctrl(struct nvme_ctrl *ctrl, bool shutdown)
 {
-	nvme_tcp_teardown_io_queues(ctrl, shutdown);
+	nvme_tcp_teardown_io_queues(ctrl);
 	nvme_quiesce_admin_queue(ctrl);
 	nvme_disable_ctrl(ctrl, shutdown);
 	nvme_tcp_teardown_admin_queue(ctrl, shutdown);
@@ -2498,6 +2493,10 @@ static void nvme_tcp_teardown_ctrl(struct nvme_ctrl *ctrl, bool shutdown)
 static void nvme_tcp_delete_ctrl(struct nvme_ctrl *ctrl)
 {
 	nvme_tcp_teardown_ctrl(ctrl, true);
+	if (ctrl->queue_count > 1) {
+		nvme_unquiesce_io_queues(ctrl);
+		nvme_remove_io_tag_set(ctrl);
+	}
 }
 
 static void nvme_reset_ctrl_work(struct work_struct *work)
