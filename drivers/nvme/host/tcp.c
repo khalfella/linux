@@ -2270,12 +2270,14 @@ out_free_queue:
 	return error;
 }
 
-static void nvme_tcp_teardown_admin_queue(struct nvme_ctrl *ctrl)
+static void nvme_tcp_teardown_admin_queue(struct nvme_ctrl *ctrl,
+					  bool hold_reqs)
 {
 	nvme_quiesce_admin_queue(ctrl);
 	blk_sync_queue(ctrl->admin_q);
 	nvme_tcp_stop_queue(ctrl, 0);
-	nvme_cancel_admin_tagset(ctrl);
+	if (!hold_reqs)
+		nvme_cancel_admin_tagset(ctrl);
 	nvme_tcp_free_admin_queue(ctrl);
 	if (ctrl->tls_pskid) {
 		dev_dbg(ctrl->device, "Wipe negotiated TLS_PSK %08x\n",
@@ -2292,12 +2294,14 @@ static void nvme_tcp_suspend_io_queues(struct nvme_ctrl *ctrl)
 	nvme_sync_io_queues(ctrl);
 }
 
-static void nvme_tcp_teardown_io_queues(struct nvme_ctrl *ctrl)
+static void nvme_tcp_teardown_io_queues(struct nvme_ctrl *ctrl,
+					bool hold_reqs)
 {
 	if (ctrl->queue_count <= 1)
 		return;
 	nvme_tcp_stop_io_queues(ctrl);
-	nvme_cancel_tagset(ctrl);
+	if (!hold_reqs)
+		nvme_cancel_tagset(ctrl);
 	nvme_tcp_free_io_queues(ctrl);
 }
 
@@ -2424,7 +2428,7 @@ destroy_io:
 	}
 destroy_admin:
 	nvme_stop_keep_alive(ctrl);
-	nvme_tcp_teardown_admin_queue(ctrl);
+	nvme_tcp_teardown_admin_queue(ctrl, false);
 	if (new) {
 		nvme_unquiesce_admin_queue(ctrl);
 		nvme_remove_admin_tag_set(ctrl);
@@ -2469,10 +2473,12 @@ static void nvme_tcp_error_recovery_work(struct work_struct *work)
 	nvme_stop_keep_alive(ctrl);
 	flush_work(&ctrl->async_event_work);
 	nvme_tcp_suspend_io_queues(ctrl);
-	nvme_tcp_teardown_io_queues(ctrl);
+	nvme_tcp_teardown_io_queues(ctrl, true);
+	nvme_tcp_teardown_admin_queue(ctrl, true);
+	if (nvme_queue_held_requests_work(ctrl))
+		nvme_wait_for_held_requests(ctrl);
 	/* unquiesce to fail fast pending requests */
 	nvme_unquiesce_io_queues(ctrl);
-	nvme_tcp_teardown_admin_queue(ctrl);
 	nvme_unquiesce_admin_queue(ctrl);
 	nvme_auth_stop(ctrl);
 
@@ -2490,11 +2496,15 @@ static void nvme_tcp_error_recovery_work(struct work_struct *work)
 
 static void nvme_tcp_teardown_ctrl(struct nvme_ctrl *ctrl, bool shutdown)
 {
+	bool hold_reqs;
+
 	nvme_tcp_suspend_io_queues(ctrl);
-	nvme_tcp_teardown_io_queues(ctrl);
 	nvme_quiesce_admin_queue(ctrl);
-	nvme_disable_ctrl(ctrl, shutdown);
-	nvme_tcp_teardown_admin_queue(ctrl);
+	hold_reqs = nvme_disable_ctrl(ctrl, shutdown);
+	nvme_tcp_teardown_io_queues(ctrl, hold_reqs);
+	nvme_tcp_teardown_admin_queue(ctrl, hold_reqs);
+	if (hold_reqs && nvme_queue_held_requests_work(ctrl))
+		nvme_wait_for_held_requests(ctrl);
 }
 
 static void nvme_tcp_delete_ctrl(struct nvme_ctrl *ctrl)
