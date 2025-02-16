@@ -356,6 +356,8 @@ struct nvme_ctrl {
 	struct work_struct async_event_work;
 	struct delayed_work ka_work;
 	struct delayed_work failfast_work;
+	struct delayed_work held_req_work;
+	struct completion held_req_completion;
 	struct nvme_command ka_cmd;
 	unsigned long ka_last_check_time;
 	struct work_struct fw_act_work;
@@ -794,6 +796,8 @@ blk_status_t nvme_host_path_error(struct request *req);
 bool nvme_cancel_request(struct request *req, void *data);
 void nvme_cancel_tagset(struct nvme_ctrl *ctrl);
 void nvme_cancel_admin_tagset(struct nvme_ctrl *ctrl);
+bool nvme_queue_held_requests_work(struct nvme_ctrl *ctrl);
+void nvme_wait_for_held_requests(struct nvme_ctrl *ctrl);
 bool nvme_change_ctrl_state(struct nvme_ctrl *ctrl,
 		enum nvme_ctrl_state new_state);
 int nvme_disable_ctrl(struct nvme_ctrl *ctrl, bool shutdown);

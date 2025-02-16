@@ -551,6 +551,65 @@ void nvme_cancel_admin_tagset(struct nvme_ctrl *ctrl)
 }
 EXPORT_SYMBOL_GPL(nvme_cancel_admin_tagset);
 
+static void nvme_held_req_work(struct work_struct *work)
+{
+	struct nvme_ctrl *ctrl = container_of(to_delayed_work(work),
+			struct nvme_ctrl, held_req_work);
+	dev_info(ctrl->device, "releasing inflight requests\n");
+	nvme_cancel_tagset(ctrl);
+	nvme_cancel_admin_tagset(ctrl);
+	complete(&ctrl->held_req_completion);
+}
+
+static bool nvme_check_inflight_request(struct request *req, void *data)
+{
+	bool *inflight_reqs = data;
+
+	if (blk_mq_rq_state(req) == MQ_RQ_IN_FLIGHT) {
+		*inflight_reqs = true;
+		return false;
+	}
+	return true;
+}
+
+bool nvme_queue_held_requests_work(struct nvme_ctrl *ctrl)
+{
+	unsigned long timeout = nvmef_req_hold_timeout_ms(ctrl);
+	bool inflight_reqs = false;
+
+	if (ctrl->queue_count > 1 && ctrl->tagset)
+		blk_mq_tagset_busy_iter(ctrl->tagset,
+			nvme_check_inflight_request, &inflight_reqs);
+	if (inflight_reqs)
+		goto schedule_work;
+
+	if (ctrl->admin_tagset)
+		blk_mq_tagset_busy_iter(ctrl->admin_tagset,
+					nvme_check_inflight_request, &inflight_reqs);
+	if (!inflight_reqs)
+		return false;
+
+schedule_work:
+	dev_info(ctrl->device, "holding inflight requests for %lums\n", timeout);
+	reinit_completion(&ctrl->held_req_completion);
+	schedule_delayed_work(&ctrl->held_req_work, msecs_to_jiffies(timeout));
+	return true;
+}
+EXPORT_SYMBOL_GPL(nvme_queue_held_requests_work);
+
+void nvme_wait_for_held_requests(struct nvme_ctrl *ctrl)
+{
+	/*
+	 * Inflight requests can be held for a duration of time that is longer
+	 * than hung_task timeout. Avoid hitting hung_task timeout while waiting
+	 * for held requests to be completed.
+	 */
+	while (!wait_for_completion_timeout(&ctrl->held_req_completion,
+					    secs_to_jiffies(1)))
+		;
+}
+EXPORT_SYMBOL_GPL(nvme_wait_for_held_requests);
+
 bool nvme_change_ctrl_state(struct nvme_ctrl *ctrl,
 		enum nvme_ctrl_state new_state)
 {
@@ -4856,6 +4915,8 @@ int nvme_init_ctrl(struct nvme_ctrl *ctrl, struct device *dev,
 
 	INIT_DELAYED_WORK(&ctrl->ka_work, nvme_keep_alive_work);
 	INIT_DELAYED_WORK(&ctrl->failfast_work, nvme_failfast_work);
+	INIT_DELAYED_WORK(&ctrl->held_req_work, nvme_held_req_work);
+	init_completion(&ctrl->held_req_completion);
 	memset(&ctrl->ka_cmd, 0, sizeof(ctrl->ka_cmd));
 	ctrl->ka_cmd.common.opcode = nvme_admin_keep_alive;
 	ctrl->ka_last_check_time = jiffies;
