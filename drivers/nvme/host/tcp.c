@@ -611,13 +611,10 @@ static void nvme_tcp_init_recv_ctx(struct nvme_tcp_queue *queue)
 
 static void nvme_tcp_error_recovery(struct nvme_ctrl *ctrl)
 {
-	if (nvme_change_ctrl_state(ctrl, NVME_CTRL_RECOVERING))
-		goto queue_err_work;
-
-	if (!nvme_change_ctrl_state(ctrl, NVME_CTRL_RESETTING))
+	if (!nvme_change_ctrl_state(ctrl, NVME_CTRL_RECOVERING) &&
+	    !nvme_change_ctrl_state(ctrl, NVME_CTRL_RESETTING))
 		return;
 
-queue_err_work:
 	dev_warn(ctrl->device, "starting error recovery\n");
 	queue_delayed_work(nvme_reset_wq, &to_tcp_ctrl(ctrl)->err_work, 0);
 }

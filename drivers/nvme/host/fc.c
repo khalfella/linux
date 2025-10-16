@@ -1941,12 +1941,10 @@ EXPORT_SYMBOL_GPL(nvme_fc_io_getuuid);
 
 static void nvme_fc_start_ioerr_recovery(struct nvme_fc_ctrl *ctrl)
 {
-	if (nvme_change_ctrl_state(&ctrl->ctrl, NVME_CTRL_RECOVERING))
-		goto queue_err_work;
-	if (!nvme_change_ctrl_state(&ctrl->ctrl, NVME_CTRL_RESETTING))
+	if (!nvme_change_ctrl_state(&ctrl->ctrl, NVME_CTRL_RECOVERING) &&
+	    !nvme_change_ctrl_state(&ctrl->ctrl, NVME_CTRL_RESETTING))
 		return;
 
-queue_err_work:
 	dev_warn(ctrl->ctrl.device, "NVME-FC{%d}: starting error recovery\n",
 		 ctrl->cnum);
 	queue_delayed_work(nvme_reset_wq, &ctrl->ioerr_work, 0);
