@@ -622,14 +622,16 @@ static int nvme_issue_wait_ccr(struct nvme_ctrl *sctrl, struct nvme_ctrl *ictrl)
 	c.ccr.cirn = cpu_to_le64(ictrl->cirn);
 	ret = __nvme_submit_sync_cmd(sctrl->admin_q, &c, &res,
 				     NULL, 0, NVME_QID_ANY, 0);
-	if (ret)
+	if (ret) {
+		ret = -EIO;
 		goto out;
+	}
 
 	result = le32_to_cpu(res.u32);
 	if (result & 0x01) /* Immediate Reset Successful */
 		goto out;
 
-	tmo = msecs_to_jiffies(max(ictrl->cqt, ictrl->kato * 1000));
+	tmo = msecs_to_jiffies(ictrl->cqt);
 	if (!wait_for_completion_timeout(&ccr.complete, tmo))
 		ret = -ETIMEDOUT;
 out:
@@ -642,7 +644,9 @@ out:
 	/* Immediate reset or AEN notified success */
 	if ((result & 0x01) || (ccr.ccrs == NVME_CCR_STATUS_SUCCESS))
 		return 0;
-	return -EIO;
+
+	/* CCR failed */
+	return -EREMOTEIO;
 }
 
 unsigned long nvme_fence_ctrl(struct nvme_ctrl *ictrl)
@@ -664,7 +668,6 @@ unsigned long nvme_fence_ctrl(struct nvme_ctrl *ictrl)
 			return deadline - now;
 		}
 
-		min_cntlid = sctrl->cntlid + 1;
 		ret = nvme_issue_wait_ccr(sctrl, ictrl);
 		if (!ret) {
 			dev_info(ictrl->device, "CCR succeeded using %s\n",
@@ -673,7 +676,14 @@ unsigned long nvme_fence_ctrl(struct nvme_ctrl *ictrl)
 			return 0;
 		}
 
-		/* Try another controller */
+		if (ret == -ETIMEDOUT || ret == -EREMOTEIO) {
+			/* Remote CCR operation timedout or failed */
+			nvme_put_ctrl_ccr(sctrl);
+			return deadline - now;
+		}
+
+		/* CCR command failed, try another path */
+		min_cntlid = sctrl->cntlid + 1;
 		nvme_put_ctrl_ccr(sctrl);
 		now = jiffies;
 	}
