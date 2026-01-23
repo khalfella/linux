@@ -1879,8 +1879,8 @@ __nvme_fc_fcpop_chk_teardowns(struct nvme_fc_ctrl *ctrl,
 
 static void nvme_fc_fenced_work(struct work_struct *work)
 {
-	struct nvme_fc_ctrl *fc_ctrl =
-			container_of(work, struct nvme_fc_ctrl, fencing_work);
+	struct nvme_fc_ctrl *fc_ctrl = container_of(to_delayed_work(work),
+			struct nvme_fc_ctrl, fenced_work);
 	struct nvme_ctrl *ctrl = &fc_ctrl->ctrl;
 
 	nvme_change_ctrl_state(ctrl, NVME_CTRL_FENCED);
