@@ -1979,6 +1979,7 @@ nvme_fc_fcpio_done(struct nvmefc_fcp_req *req)
 	__le16 status = cpu_to_le16(NVME_SC_SUCCESS << 1);
 	union nvme_result result;
 	bool op_term, terminate_assoc = true;
+	enum nvme_ctrl_state state;
 	int opstate;
 
 	/*
@@ -2128,9 +2129,21 @@ done:
 	 */
 	op_term = __nvme_fc_fcpop_chk_teardowns(ctrl, op, opstate);
 
-	/* A controller being fenced will cancel inflight when done */
-	if (nvme_ctrl_state(&ctrl->ctrl) == NVME_CTRL_FENCING)
+	/*
+	 * If we are going to terminate associations and the controller is
+	 * LIVE or FENCING, then do not complete this request now. Let error
+	 * recovery cancel this request when it is safe to do so.
+	 */
+	state = nvme_ctrl_state(&ctrl->ctrl);
+	if (terminate_assoc &&
+	    (state == NVME_CTRL_LIVE || state == NVME_CTRL_FENCING)) {
+	    	dev_info(ctrl->ctrl.device, "skip completing rq = %px, tag = %d\n", rq, rq->tag);
 		goto check_op_term;
+	}
+
+	if (state == NVME_CTRL_FENCING) {
+	    	dev_info(ctrl->ctrl.device, "completing while fencing rq = %px, tag = %d\n", rq, rq->tag);
+	}
 
 	if (!nvme_try_complete_req(rq, status, result))
 		nvme_fc_complete_rq(rq);
@@ -3253,11 +3266,24 @@ nvme_fc_delete_association(struct nvme_fc_ctrl *ctrl)
 	/* kill the aens as they are a separate path */
 	nvme_fc_abort_aen_ops(ctrl);
 
+	dev_info(ctrl->ctrl.device, "started waiting for %d commands to be aborted\n", atomic_read(&ctrl->iocnt));
+
+
 	/* wait for all io that had to be aborted */
 	wait_event(ctrl->ioabort_wait, atomic_read(&ctrl->iocnt) == 0);
+
+	dev_info(ctrl->ctrl.device, "done waiting for aborted commands\n");
+
 	spin_lock_irq(&ctrl->lock);
 	clear_bit(FCCTRL_TERMIO, &ctrl->flags);
 	spin_unlock_irq(&ctrl->lock);
+
+	/*
+	 * In case request are not completed because they had to be held
+	 * cancel them here.
+	 */
+	nvme_cancel_tagset(&ctrl->ctrl);
+	nvme_cancel_admin_tagset(&ctrl->ctrl);
 
 	nvme_fc_term_aen_ops(ctrl);
 
@@ -3311,6 +3337,8 @@ nvme_fc_delete_ctrl(struct nvme_ctrl *nctrl)
 	 * waiting for io to terminate
 	 */
 	nvme_fc_delete_association(ctrl);
+
+
 	cancel_work_sync(&ctrl->ioerr_work);
 
 	if (ctrl->ctrl.tagset)
@@ -3410,9 +3438,6 @@ nvme_fc_error_recovery(struct nvme_fc_ctrl *ctrl)
 
 	/* will block while waiting for io to terminate */
 	nvme_fc_delete_association(ctrl);
-
-	nvme_cancel_tagset(&ctrl->ctrl);
-	nvme_cancel_admin_tagset(&ctrl->ctrl);
 
 	/* Do not reconnect if controller is being deleted */
 	if (!nvme_change_ctrl_state(&ctrl->ctrl, NVME_CTRL_CONNECTING))

@@ -8,6 +8,7 @@
 #include <linux/blk-integrity.h>
 #include <linux/memremap.h>
 #include <linux/module.h>
+#include <linux/delay.h>
 #include "nvmet.h"
 
 void nvmet_bdev_set_limits(struct block_device *bdev, struct nvme_id_ns *id)
@@ -240,6 +241,7 @@ static int nvmet_bdev_alloc_bip(struct nvmet_req *req, struct bio *bio,
 
 static void nvmet_bdev_execute_rw(struct nvmet_req *req)
 {
+	static int counter = 0;
 	unsigned int sg_cnt = req->sg_cnt;
 	struct bio *bio;
 	struct scatterlist *sg;
@@ -328,7 +330,10 @@ static void nvmet_bdev_execute_rw(struct nvmet_req *req)
 		}
 	}
 
-	submit_bio(bio);
+	/* skip submitting the bio deliberately */
+	if (++counter != 10000)
+		submit_bio(bio);
+out:
 	blk_finish_plug(&plug);
 }
 

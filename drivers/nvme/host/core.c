@@ -520,12 +520,15 @@ EXPORT_SYMBOL_GPL(nvme_host_path_error);
 
 bool nvme_cancel_request(struct request *req, void *data)
 {
+	struct nvme_ctrl *ctrl = (struct nvme_ctrl*) data;
 	dev_dbg_ratelimited(((struct nvme_ctrl *) data)->device,
 				"Cancelling I/O %d", req->tag);
 
 	/* don't abort one completed or idle request */
 	if (blk_mq_rq_state(req) != MQ_RQ_IN_FLIGHT)
 		return true;
+
+	dev_err(ctrl->device, "%s, rq = %px, tag = %d\n", __func__, req, req->tag);
 
 	nvme_req(req)->status = NVME_SC_HOST_ABORTED_CMD;
 	nvme_req(req)->flags |= NVME_REQ_CANCELLED;
@@ -777,8 +780,10 @@ bool nvme_change_ctrl_state(struct nvme_ctrl *ctrl,
 
 	if (changed) {
 		WRITE_ONCE(ctrl->state, new_state);
+		dev_info(ctrl->device, "%s, old_state = %d, new_status = %d\n",__func__, old_state, new_state);
 		wake_up_all(&ctrl->state_wq);
 	}
+
 
 	spin_unlock_irqrestore(&ctrl->lock, flags);
 	if (!changed)
