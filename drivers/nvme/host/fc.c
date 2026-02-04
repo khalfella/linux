@@ -3324,13 +3324,13 @@ nvme_fc_delete_ctrl(struct nvme_ctrl *nctrl)
 	struct nvme_fc_ctrl *ctrl = to_fc_ctrl(nctrl);
 
 	cancel_delayed_work_sync(&ctrl->connect_work);
+	cancel_work_sync(&ctrl->ioerr_work);
 
 	/*
 	 * kill the association on the link side.  this will block
 	 * waiting for io to terminate
 	 */
 	nvme_fc_delete_association(ctrl);
-	cancel_work_sync(&ctrl->ioerr_work);
 
 	if (ctrl->ctrl.tagset)
 		nvme_remove_io_tag_set(&ctrl->ctrl);
