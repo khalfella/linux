@@ -1929,6 +1929,21 @@ nvme_fc_ctrl_ioerr_work(struct work_struct *work)
 	struct nvme_fc_ctrl *ctrl =
 			container_of(work, struct nvme_fc_ctrl, ioerr_work);
 
+	/*
+	* if an error (io timeout, etc) while (re)connecting, the remote
+	* port requested terminating of the association (disconnect_ls)
+	* or an error (timeout or abort) occurred on an io while creating
+	* the controller.  Abort any ios on the association and let the
+	* create_association error path resolve things.
+	*/
+	if (nvme_ctrl_state(&ctrl->ctrl) == NVME_CTRL_CONNECTING) {
+		__nvme_fc_abort_outstanding_ios(ctrl, true);
+		dev_warn(ctrl->ctrl.device,
+			 "NVME-FC{%d}: transport error during (re)connect\n",
+			 ctrl->cnum);
+		return;
+	}
+
 	nvme_fc_flush_fencing_work(ctrl);
 	nvme_fc_error_recovery(ctrl);
 }
@@ -1962,12 +1977,12 @@ static void nvme_fc_start_ioerr_recovery(struct nvme_fc_ctrl *ctrl,
 		return;
 	}
 
-	if (!nvme_change_ctrl_state(&ctrl->ctrl, NVME_CTRL_RESETTING))
-		return;
-
-	dev_warn(ctrl->ctrl.device, "NVME-FC{%d}: starting error recovery %s\n",
-		 ctrl->cnum, errmsg);
-	queue_work(nvme_reset_wq, &ctrl->ioerr_work);
+	if (nvme_ctrl_state(&ctrl->ctrl) == NVME_CTRL_CONNECTING ||
+	    nvme_change_ctrl_state(&ctrl->ctrl, NVME_CTRL_RESETTING)) {
+		dev_warn(ctrl->ctrl.device, "NVME-FC{%d}: starting error recovery %s\n",
+			 ctrl->cnum, errmsg);
+		queue_work(nvme_reset_wq, &ctrl->ioerr_work);
+	}
 }
 
 static void
