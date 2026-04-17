@@ -3176,6 +3176,8 @@ void device_initialize(struct device *dev)
 	dev->dma_coherent = dma_default_coherent;
 #endif
 	swiotlb_dev_init(dev);
+	init_ratelimit(&dev->rl, DEFAULT_RATELIMIT_INTERVAL,
+		       DEFAULT_RATELIMIT_BURST);
 }
 EXPORT_SYMBOL_GPL(device_initialize);
 

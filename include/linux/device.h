@@ -701,6 +701,7 @@ struct device {
 	struct device_physical_location *physical_location;
 
 	enum device_removable	removable;
+	struct ratelimit_state	rl;
 
 	bool			offline_disabled:1;
 	bool			offline:1;

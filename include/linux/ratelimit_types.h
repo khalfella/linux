@@ -43,6 +43,17 @@ struct ratelimit_state {
 		RATELIMIT_STATE_INIT(name, interval_init, burst_init)	\
 
 extern int ___ratelimit(struct ratelimit_state *rs, const char *func);
+
+#define init_ratelimit(__rl, __interval, __burst) {	\
+	raw_spin_lock_init(&(__rl)->lock);		\
+	(__rl)->interval = (__interval);		\
+	(__rl)->burst = (__burst);			\
+	atomic_set(&(__rl)->rs_n_left, 0);		\
+	atomic_set(&(__rl)->missed, 0);			\
+	(__rl)->flags = 0;				\
+	(__rl)->begin = 0;				\
+}
+
 #define __ratelimit(state) ___ratelimit(state, __func__)
 
 #endif /* _LINUX_RATELIMIT_TYPES_H */
