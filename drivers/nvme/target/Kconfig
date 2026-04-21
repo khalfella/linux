@@ -136,3 +136,13 @@ config NVME_TARGET_DELAY_REQUESTS
 	 NVMe over Fabrics target, which allows for support of the cancel command.
 
 	 If unsure, say N.
+
+config NVME_TARGET_FATAL_OPCODE
+	bool "NVMe over Fabrics target fatal opcode"
+	depends on NVME_TARGET && NVME_TARGET_DEBUGFS
+	help
+	 This is a testing feature to allow specifying an nvme opcode as fatal
+	 opcode. When nvme controller receives fatal opcode it will execute
+	 the request with specified delay and drop the connections to initiator.
+
+	 If unsure, say N.
