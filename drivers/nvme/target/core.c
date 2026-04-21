@@ -1919,12 +1919,19 @@ void nvmet_execute_request(struct nvmet_req *req) {
 		return req->execute(req);
 
 	if (ctrl) {
+		if (req->cmd->common.opcode == ctrl->fopcode) {
+			delay_msec = ctrl->fopcode_delay_ms;
+			nvmet_ctrl_fatal_error(ctrl);
+			goto delay;
+		}
+
 		delay_count = atomic_dec_if_positive(&ctrl->delay_count) + 1;
 		delay_msec = ctrl->delay_msec;
 	}
 	if (!(ctrl && delay_count && delay_msec))
 		return req->execute(req);
 
+delay:
 	INIT_DELAYED_WORK(&req->req_work, nvmet_delayed_execute_req);
 	queue_delayed_work(nvmet_wq, &req->req_work, msecs_to_jiffies(delay_msec));
 }
