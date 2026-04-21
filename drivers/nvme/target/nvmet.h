@@ -319,6 +319,10 @@ struct nvmet_ctrl {
 	atomic_t		delay_count;
 	u32			delay_msec;
 #endif
+#ifdef CONFIG_NVME_TARGET_FATAL_OPCODE
+	uint8_t			fopcode;
+	u32			fopcode_delay_ms;
+#endif
 	struct nvmet_pr_log_mgr pr_log_mgr;
 };
 

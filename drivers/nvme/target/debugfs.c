@@ -206,6 +206,39 @@ static ssize_t nvmet_ctrl_delay_write(struct file *file, const char __user *buf,
 NVMET_DEBUGFS_RW_ATTR(nvmet_ctrl_delay);
 #endif /* CONFIG_NVME_TARGET_DELAY_REQUESTS */
 
+#if IS_ENABLED(CONFIG_NVME_TARGET_FATAL_OPCODE)
+static int nvmet_ctrl_fatal_opcode_show(struct seq_file *m, void *p)
+{
+	struct nvmet_ctrl *ctrl = m->private;
+
+	seq_printf(m, "%02x %u\n", ctrl->fopcode, ctrl->fopcode_delay_ms);
+	return 0;
+}
+
+static ssize_t nvmet_ctrl_fatal_opcode_write(struct file *file, const char __user *buf,
+				      size_t count, loff_t *ppos)
+{
+	struct seq_file *m = file->private_data;
+	struct nvmet_ctrl *ctrl = m->private;
+	char fopcode_buf[22] = {};
+	int fopcode_delay_ms, n;
+	uint8_t fopcode;
+
+	if (count >= sizeof(fopcode_buf))
+		return -EINVAL;
+	if (copy_from_user(fopcode_buf, buf, count))
+		return -EFAULT;
+
+	n = sscanf(fopcode_buf, "%hhx %u", &fopcode, &fopcode_delay_ms);
+	if (n != 2)
+		return -EINVAL;
+	ctrl->fopcode = fopcode;
+	ctrl->fopcode_delay_ms = fopcode_delay_ms;
+	return count;
+}
+NVMET_DEBUGFS_RW_ATTR(nvmet_ctrl_fatal_opcode);
+#endif /* CONFIG_NVME_TARGET_FATAL_OPCODE */
+
 int nvmet_debugfs_ctrl_setup(struct nvmet_ctrl *ctrl)
 {
 	char name[32];
@@ -244,6 +277,11 @@ int nvmet_debugfs_ctrl_setup(struct nvmet_ctrl *ctrl)
 #if IS_ENABLED(CONFIG_NVME_TARGET_DELAY_REQUESTS)
 	debugfs_create_file("delay", S_IWUSR, ctrl->debugfs_dir, ctrl,
 			    &nvmet_ctrl_delay_fops);
+#endif
+
+#if IS_ENABLED(CONFIG_NVME_TARGET_FATAL_OPCODE)
+	debugfs_create_file("fopcode", S_IWUSR, ctrl->debugfs_dir, ctrl,
+			    &nvmet_ctrl_fatal_opcode_fops);
 #endif
 	return 0;
 }
