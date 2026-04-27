@@ -107,7 +107,8 @@ void _dev_info(const struct device *dev, const char *fmt, ...)
 #define dev_printk_index_wrap(_p_func, level, dev, fmt, ...)		\
 	({								\
 		dev_printk_index_emit(level, fmt);			\
-		_p_func(dev, fmt, ##__VA_ARGS__);			\
+		if (__ratelimit((struct ratelimit_state *)&(dev)->rl))	\
+			_p_func(dev, fmt, ##__VA_ARGS__);		\
 	})
 
 /*
@@ -126,7 +127,8 @@ void _dev_info(const struct device *dev, const char *fmt, ...)
 #define dev_printk(level, dev, fmt, ...)				\
 	({								\
 		dev_printk_index_emit(level, fmt);			\
-		_dev_printk(level, dev, fmt, ##__VA_ARGS__);		\
+		if (__ratelimit((struct ratelimit_state *)&(dev)->rl))	\
+			_dev_printk(level, dev, fmt, ##__VA_ARGS__);	\
 	})
 
 /*
@@ -208,10 +210,7 @@ do {									\
 
 #define dev_level_ratelimited(dev_level, dev, fmt, ...)			\
 do {									\
-	static DEFINE_RATELIMIT_STATE(_rs,				\
-				      DEFAULT_RATELIMIT_INTERVAL,	\
-				      DEFAULT_RATELIMIT_BURST);		\
-	if (__ratelimit(&_rs))						\
+	if (__ratelimit((struct ratelimit_state *)&(dev)->rl))		\
 		dev_level(dev, fmt, ##__VA_ARGS__);			\
 } while (0)
 
@@ -234,22 +233,16 @@ do {									\
 /* descriptor check is first to prevent flooding with "callbacks suppressed" */
 #define dev_dbg_ratelimited(dev, fmt, ...)				\
 do {									\
-	static DEFINE_RATELIMIT_STATE(_rs,				\
-				      DEFAULT_RATELIMIT_INTERVAL,	\
-				      DEFAULT_RATELIMIT_BURST);		\
 	DEFINE_DYNAMIC_DEBUG_METADATA(descriptor, fmt);			\
 	if (DYNAMIC_DEBUG_BRANCH(descriptor) &&				\
-	    __ratelimit(&_rs))						\
+	    __ratelimit((struct ratelimit_state *)&(dev)->rl))		\
 		__dynamic_dev_dbg(&descriptor, dev, dev_fmt(fmt),	\
 				  ##__VA_ARGS__);			\
 } while (0)
 #elif defined(DEBUG)
 #define dev_dbg_ratelimited(dev, fmt, ...)				\
 do {									\
-	static DEFINE_RATELIMIT_STATE(_rs,				\
-				      DEFAULT_RATELIMIT_INTERVAL,	\
-				      DEFAULT_RATELIMIT_BURST);		\
-	if (__ratelimit(&_rs))						\
+	if (__ratelimit((struct ratelimit_state *)&(dev)->rl))		\
 		dev_printk(KERN_DEBUG, dev, dev_fmt(fmt), ##__VA_ARGS__); \
 } while (0)
 #else
