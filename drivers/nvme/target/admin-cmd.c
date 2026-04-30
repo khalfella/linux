@@ -627,6 +627,9 @@ static void nvmet_execute_get_log_page_ccr(struct nvmet_req *req)
 		u8 ccr_status = ccr->ctrl ? NVME_CCR_STATUS_IN_PROGRESS :
 					NVME_CCR_STATUS_SUCCESS;
 
+		if (ctrl->fail_ccr)
+			ccr_status = NVME_CCR_STATUS_FAILED;
+
 		log->entries[index].icid = cpu_to_le16(ccr->icid);
 		log->entries[index].ciu = ccr->ciu;
 		log->entries[index].acid = cpu_to_le16(0xffff);
@@ -1722,8 +1725,16 @@ void nvmet_execute_cross_ctrl_reset(struct nvmet_req *req)
 
 out_unlock:
 	mutex_unlock(&sctrl->lock);
-	if (status == NVME_SC_SUCCESS)
-		nvmet_ctrl_fatal_error(ictrl);
+	if (status == NVME_SC_SUCCESS) {
+		/* See if we need to force CCR operation to fail */
+		if (sctrl->fail_ccr) {
+			nvmet_add_async_event(sctrl, NVME_AER_NOTICE,
+					      NVME_AER_NOTICE_CCR_COMPLETED,
+					      NVME_LOG_CCR);
+		} else {
+			nvmet_ctrl_fatal_error(ictrl);
+		}
+	}
 	nvmet_ctrl_put(ictrl);
 out:
 	nvmet_req_complete(req, status);
