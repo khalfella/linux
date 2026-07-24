@@ -323,6 +323,9 @@ struct nvmet_ctrl {
 	uint8_t			fopcode;
 	u32			fopcode_delay_ms;
 #endif
+#ifdef CONFIG_NVME_TARGET_FORCE_FAIL_CCR
+	uint8_t			fail_ccr;
+#endif
 	struct nvmet_pr_log_mgr pr_log_mgr;
 };
 

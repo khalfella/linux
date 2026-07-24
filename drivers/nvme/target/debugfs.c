@@ -239,6 +239,37 @@ static ssize_t nvmet_ctrl_fatal_opcode_write(struct file *file, const char __use
 NVMET_DEBUGFS_RW_ATTR(nvmet_ctrl_fatal_opcode);
 #endif /* CONFIG_NVME_TARGET_FATAL_OPCODE */
 
+#if IS_ENABLED(CONFIG_NVME_TARGET_FORCE_FAIL_CCR)
+static int nvmet_ctrl_fail_ccr_show(struct seq_file *m, void *p)
+{
+	struct nvmet_ctrl *ctrl = m->private;
+
+	seq_printf(m, "%d\n", ctrl->fail_ccr);
+	return 0;
+}
+
+static ssize_t nvmet_ctrl_fail_ccr_write(struct file *file, const char __user *buf,
+				      size_t count, loff_t *ppos)
+{
+	struct seq_file *m = file->private_data;
+	struct nvmet_ctrl *ctrl = m->private;
+	char fail_ccr_buf[22] = {};
+	int fail_ccr, n;
+
+	if (count >= sizeof(fail_ccr_buf))
+		return -EINVAL;
+	if (copy_from_user(fail_ccr_buf, buf, count))
+		return -EFAULT;
+
+	n = sscanf(fail_ccr_buf, "%d", &fail_ccr);
+	if (n != 1)
+		return -EINVAL;
+	ctrl->fail_ccr = !!fail_ccr;
+	return count;
+}
+NVMET_DEBUGFS_RW_ATTR(nvmet_ctrl_fail_ccr);
+#endif /* CONFIG_NVME_TARGET_FORCE_FAIL_CCR */
+
 int nvmet_debugfs_ctrl_setup(struct nvmet_ctrl *ctrl)
 {
 	char name[32];
